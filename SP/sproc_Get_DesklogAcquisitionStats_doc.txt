@@ -1,0 +1,99 @@
+### 1. Stored Procedure Name
+
+`sproc_Get_DesklogAcquisitionStats`
+
+### 2. Main Purpose
+
+The main purpose of this stored procedure is to compute and return a set of statistics related to desklog acquisitions and sales performance within a specified date range (`@dtStart` to `@dtEnd`) for a given child company (`@lChildCompanyID`). It analyzes data from several related tables to produce statistics on sales, acquisitions, showroom visits, and various sales processes. This stored procedure helps users—typically data analysts or sales managers—understand sales trends, departmental performance, and customer engagement metrics.
+
+### 3. Input Parameters
+
+| Parameter Name     | Data Type | Description                                                                 |
+|-----------------------|------------|------------------------------------------------------------------------------|
+| `@lChildCompanyID` | `INT`     | The unique identifier of the child company for which desklog statistics are needed. |
+| `@dtStart`           | `DATETIME`| The start date of the range for filtering desklog visits.                     |
+| `@dtEnd`             | `DATETIME`| The end date of the range for filtering desklog visits.                       |
+| `@ActiveOverMinutes`| `INT`     | An optional configuration value representing the time in minutes, with a default of 45, used to identify prolonged desklog visits. |
+
+### 4. Created and Inserted Temporary Tables
+
+| Temporary Table Name    | Purpose                                                                                           |
+|-------------------------|---------------------------------------------------------------------------------------------------|
+| `@Companies`            | Holds company data related to the specified child company needed for filtration and analysis.     |
+| `#DesklogCore`          | Stores desklog visits with detailed task types and timers.                                        |
+| `#DesklogBeBack`        | Captures be-back logic indicating if a deal has a repeated visit.                                 |
+| `#Deal`                 | Records details of various deals including sales and acquisitions, along with their statuses.     |
+| `#Category`             | Stores categorized source statistics (e.g., showroom, internet, etc.) for deals.                  |
+| `#Sold`                 | Contains information about sold deals with financial details.                                      |
+| `#SalesProcess`         | Documents the involvement of sales processes like write-up and demo for each deal.                |
+| `#SalesInShowroom`      | Indicates whether a deal involved showroom activity.                                              |
+| `#DealAdditionalStats`  | Captures additional statistics such as whether the timer exceeded a specified threshold.          |
+
+### 5. Read Tables and Views
+
+- `dbo.tblCompany`
+- `dbo.tblCompanyDetails`
+- `dbo.tblCompanyChildCompanyMap`
+- `dbo.vwCompanyHierarchy`
+- `dbo.tblDesklogVisit`
+- `dbo.vwTask`
+- `dbo.vwDeal`
+- `dbo.tblPerson`
+- `dbo.tblSource`
+- `dbo.tblPurchaseDetails`
+- `dbo.vwTaskItem`
+- `dbo.vwDealDetails`
+- `dbo.tblDealSubStatus`
+
+### 6. SQL Logic and Insert Blocks
+
+#### Company Filtering
+- Uses a combination of inner and left joins to gather company-related data restricted to active child companies within the hierarchy of the input `@lChildCompanyID`.
+
+#### Desklog Core Data:
+- Filters desklog visits based on task completion and time status. Calculates 'InTaskType' to categorize the visits.
+
+#### Be-Back Calculation:
+- Counts deals with multiple visits ("BeBack") that occur before the current visit for certain task types.
+
+#### Deal and Category Calculations:
+- Identifies sale and acquisition deals. Distinguishes 'Bought' and 'Active' deals, utilizing status matching on substatus.
+- Uses PIVOT to transform source categories into compiled metrics for each deal.
+
+#### Sold and Process Calculations:
+- Analyzes sales status, whether they are within a specified date range, and the gross values of the sales.
+- Computes process involvement statistics (like write-ups, demos) using PIVOT.
+
+### 7. Output Variables 
+
+The final `SELECT` statement produces the following output statistics:
+
+| Output Variable         | Description                                                                                  |
+|-------------------------|----------------------------------------------------------------------------------------------|
+| `Sold_Sales`            | Count of sales within the date range.                                                        |
+| `Sold_Showroom_Sales`   | Count of showroom sales within the date range.                                               |
+| `Sold_Internet_Sales`   | Count of internet sales within the date range.                                               |
+| `Sold_Phone_Sales`      | Count of phone sales within the date range.                                                  |
+| `Sold_Campaign_Sales`   | Count of campaign sales within the date range.                                               |
+| `BeBack_Sales`          | Number of sales involving previous visits (BeBack).                                          |
+| `Showroom_Sales`        | Total showroom interactions during sales.                                                    |
+| `Campaign_Sales`        | Count of campaigns sales not involving showroom interactions.                                |
+| `Phone_Sales`           | Count of phone sales not involving showroom interactions.                                    |
+| `Internet_Sales`        | Count of internet sales not involving showroom interactions.                                 |
+| `WriteUp_Sales`         | Count of sales with a write-up process.                                                      |
+| `Demo_Sales`            | Count of sales that involved a demo process.                                                 |
+| `Appraisal_Sales`       | Number of sales involving an appraisal process.                                              |
+| `Over45Min_Sales`       | Count of sales visits exceeding the configured period (default 45 minutes).                  |
+| `TurnOver_Sales`        | Number of sales involving a turnover process.                                                |
+| `FrontGross_Sales`      | Total front gross profit from sales.                                                         |
+| `TotalGross_Sales`      | Total gross profit from sales.                                                               |
+| `Sold_Acq`, `Sold_Showroom_Acq`, `Sold_Internet_Acq`, etc. | Various acquisition metrics associated with sales statuses.                              |
+
+### 8. Performance and Optimization Considerations
+
+- **Indexes:** Ensure that fields used in JOINs and conditions, such as `lDealID`, `lCompanyID`, and `dtIn`, have appropriate indexing to enhance performance.
+- **Scalability:** With large datasets, the use of table variables and temporary tables can impact performance. It might be beneficial to review index strategies or consider using optimized views or persisted computed columns for frequently accessed calculations.
+
+### 9. Error Handling
+
+The procedure uses a TRY-CATCH block for error handling. However, it simply rethrows the error using the `THROW` statement. Consider logging the error into a dedicated error tracking table with a meaningful message for better debugging.
